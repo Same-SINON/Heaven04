@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover,user-scalable=no">
+<title>Chrome Infinity Atmos</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{overflow:hidden;background:#080808;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:default;-webkit-tap-highlight-color:transparent;touch-action:none}
+#ui{position:fixed;bottom:max(30px,env(safe-area-inset-bottom,30px));right:max(30px,env(safe-area-inset-right,30px));z-index:100}
+#trigger{width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.1);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.2);cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 0 20px rgba(0,0,0,.5);position:absolute;bottom:0;right:0;transition:transform .3s cubic-bezier(.175,.885,.32,1.275),opacity .5s}
+#trigger:hover{transform:scale(1.1);border-color:rgba(255,255,255,.5)}
+#panel{position:absolute;bottom:0;right:0;display:flex;flex-direction:column;align-items:center;gap:16px;background:rgba(15,15,15,.65);backdrop-filter:blur(15px);padding:20px;border-radius:24px;border:1px solid rgba(255,255,255,.1);box-shadow:0 10px 30px rgba(0,0,0,.8);opacity:0;pointer-events:none;transform:scale(.5) translateY(10px) translateX(10px);transition:all .4s cubic-bezier(.175,.885,.32,1.275);transform-origin:bottom right}
+#panel.on{opacity:1;pointer-events:auto;transform:none}
+canvas#cw{border-radius:50%;box-shadow:0 0 20px rgba(0,0,0,.5);cursor:crosshair;background:#000}
+#presets{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;width:100%}
+.p{width:32px;height:32px;border-radius:50%;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:transform .2s,border-color .3s;position:relative}
+.p::after{content:'';position:absolute;inset:-8px;border-radius:50%}
+.p.on{border-color:rgba(255,255,255,.9);box-shadow:0 0 8px currentColor}
+#sw{display:flex;align-items:center;width:100%;gap:10px;padding:0 5px}
+#bs{-webkit-appearance:none;appearance:none;flex:1;height:4px;background:rgba(255,255,255,.2);border-radius:2px;outline:none}
+#bs::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#fff;cursor:pointer;box-shadow:0 0 10px rgba(255,255,255,.8)}
+#loading,#err{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;z-index:200;pointer-events:none}
+#loading{color:#fff;font-family:monospace;font-size:1.1rem;letter-spacing:3px;text-shadow:0 0 10px rgba(255,255,255,.5);transition:opacity .5s}
+#err{display:none;color:#ff5555;background:rgba(0,0,0,.85);padding:20px 28px;border-radius:12px;font-family:monospace;line-height:1.8;max-width:90vw;pointer-events:auto}
+#hint{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,.35);font-family:monospace;font-size:.65rem;letter-spacing:3px;text-transform:uppercase;transition:opacity 1.5s;z-index:50;pointer-events:none}
+#ui-l{position:fixed;bottom:max(30px,env(safe-area-inset-bottom,30px));left:max(30px,env(safe-area-inset-left,30px));z-index:100}
+#ltrigger{width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.1);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.2);cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 0 20px rgba(0,0,0,.5);position:absolute;bottom:0;left:0;transition:transform .3s cubic-bezier(.175,.885,.32,1.275),opacity .5s}
+#ltrigger:hover{transform:scale(1.1);border-color:rgba(255,255,255,.5)}
+#lpanel{position:absolute;bottom:0;left:0;display:flex;flex-direction:column;align-items:center;gap:14px;background:rgba(15,15,15,.65);backdrop-filter:blur(15px);padding:20px;border-radius:24px;border:1px solid rgba(255,255,255,.1);box-shadow:0 10px 30px rgba(0,0,0,.8);opacity:0;pointer-events:none;transform:scale(.5) translateY(10px) translateX(-10px);transition:all .4s cubic-bezier(.175,.885,.32,1.275);transform-origin:bottom left}
+#lpanel.on{opacity:1;pointer-events:auto;transform:none}
+#lpad{width:140px;height:140px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);cursor:crosshair;position:relative;touch-action:none;user-select:none}
+#lpad::before,#lpad::after{content:'';position:absolute;background:rgba(255,255,255,.08);pointer-events:none}
+#lpad::before{width:1px;height:100%;left:calc(50% - .5px);top:0}#lpad::after{width:100%;height:1px;top:calc(50% - .5px);left:0}
+#ldot{width:14px;height:14px;border-radius:50%;background:rgba(255,255,255,.9);box-shadow:0 0 12px rgba(255,255,255,.7);position:absolute;transform:translate(-50%,-50%);pointer-events:none;left:50%;top:50%}
+#lpad-lbl{color:rgba(255,255,255,.35);font-family:monospace;font-size:.58rem;letter-spacing:2px;text-transform:uppercase}
+#lreset{color:rgba(255,255,255,.45);font-family:monospace;font-size:.58rem;letter-spacing:1.5px;cursor:pointer;padding:5px 12px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:none;transition:border-color .2s,color .2s}
+#lreset:hover{border-color:rgba(255,255,255,.45);color:#fff}
+</style>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.webgpu.js","three/webgpu":"https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.webgpu.js","three/tsl":"https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.tsl.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.183.0/examples/jsm/"}}
+</script>
+</head>
+<body>
+
+<div id="loading">GENERATING WEBGPU ATMOSPHERE…</div>
+<div id="err"></div>
+<div id="hint">SCROLL · PINCH TO ZOOM</div>
+
+<div id="ui">
+  <div id="panel">
+    <canvas id="cw" width="160" height="160"></canvas>
+    <div id="presets">
+      <div class="p" data-c="#ffffff" style="background:#fff" title="White"></div>
+      <div class="p" data-c="#00ffff" style="background:#0ff" title="Cyan"></div>
+      <div class="p" data-c="#ff0066" style="background:#f06" title="Magenta"></div>
+      <div class="p" data-c="#ffd700" style="background:#fd0" title="Gold"></div>
+      <div class="p" data-c="#00ff88" style="background:#0f8" title="Emerald"></div>
+      <div class="p" data-c="#8800ff" style="background:#80f" title="UV"></div>
+    </div>
+    <div id="sw">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      <input type="range" id="bs" min="0.2" max="3" step="0.1" value="1">
+    </div>
+  </div>
+  <div id="trigger">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 10 10"/></svg>
+  </div>
+</div>
+
+<div id="ui-l">
+  <div id="lpanel">
+    <div id="lpad"><div id="ldot"></div></div>
+    <div id="lpad-lbl">BEAM DIRECTION</div>
+    <button id="lreset">RESET</button>
+  </div>
+  <div id="ltrigger">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round">
+      <circle cx="5" cy="5" r="2.5" fill="rgba(255,255,255,.8)" stroke="none"/>
+      <circle cx="19" cy="5" r="2.5" fill="rgba(255,255,255,.8)" stroke="none"/>
+      <line x1="5" y1="7.5" x2="12" y2="21"/>
+      <line x1="19" y1="7.5" x2="12" y2="21"/>
+    </svg>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three/webgpu';
+import { vec2, vec3, vec4, float, Fn, time, texture3D, screenUV, uniform, screenCoordinate, pass } from 'three/tsl';
+import { bloom }        from 'three/addons/tsl/display/BloomNode.js';
+import { bayer16 }      from 'three/addons/tsl/math/Bayer.js';
+import { gaussianBlur } from 'three/addons/tsl/display/GaussianBlurNode.js';
+import { ImprovedNoise } from 'three/addons/math/ImprovedNoise.js';
+import { SVGLoader }    from 'three/addons/loaders/SVGLoader.js';
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+const IS_MOBILE = navigator.maxTouchPoints > 0 || matchMedia('(pointer:coarse)').matches;
+const LAYER_VOL = 10, MIN_Z = 6, MAX_Z = 30;
+const DECAY = 0.992, CUTOFF = 0.00002, SENS = 0.002;
+// Base intensities for point lights (front, left, right, back, top)
+const PT_BASE = [250, 60, 60, 100, 130];
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let scene, camera, renderer, pipeline, object, hitBox, particles;
+let spotLights = [], ptLights = [];
+let volIntensity;
+let isDragging = false, isHovering = false;
+let angVelX = 0, angVelY = 0;
+let targetZ = 13, lastInteract = performance.now();
+let targetColor  = new THREE.Color(0xffffff);
+let currentColor = new THREE.Color(0xffffff);
+const _gray = new THREE.Color(0x888888);  // pre-alloc to avoid GC
+let brightnessScale = 1, uiTimer;
+let lightAzimuth = 0, lightElevation = 5, lUiTimer;
+
+// Pre-allocated rotation helpers -- avoids per-frame garbage on iOS
+const _qY = new THREE.Quaternion(), _qX = new THREE.Quaternion();
+const _aY = new THREE.Vector3(0,1,0), _aX = new THREE.Vector3(1,0,0);
+const _idQ = new THREE.Quaternion(); // identity = drift-back target
+const raycaster = new THREE.Raycaster(), mouse = new THREE.Vector2();
+
+// DOM refs
+const $ = id => document.getElementById(id);
+const loadEl=$('loading'), errEl=$('err'), hintEl=$('hint');
+const panelEl=$('panel'), triggerEl=$('trigger');
+const cwCvs=$('cw'), cwCtx=cwCvs.getContext('2d',{willReadFrequently:true});
+const bsEl=$('bs');
+const lPanelEl=$('lpanel'), lTriggerEl=$('ltrigger');
+const presetBtns = document.querySelectorAll('.p');
+
+// ── Multi-octave FBM 3D noise texture ─────────────────────────────────────────
+function makeNoise3D() {
+  const sz = IS_MOBILE ? 64 : 128;
+  const data = new Uint8Array(sz * sz * sz);
+  const perlin = new ImprovedNoise(), rf = 5;
+  let i = 0;
+  for (let z = 0; z < sz; z++) for (let y = 0; y < sz; y++) for (let x = 0; x < sz; x++) {
+    const nx=x/sz*rf, ny=y/sz*rf, nz=z/sz*rf;
+    let v=0, a=1, f=10, ta=0;
+    for (let o=0; o<5; o++) { v+=a*perlin.noise(nx*f,ny*f,nz*f); ta+=a; a*=.5; f*=2; }
+    data[i++] = 128 + 128*(v/ta);
+  }
+  const t = new THREE.Data3DTexture(data,sz,sz,sz);
+  t.format=THREE.RedFormat; t.minFilter=t.magFilter=THREE.LinearFilter;
+  t.wrapS=t.wrapT=t.wrapR=THREE.RepeatWrapping;
+  t.unpackAlignment=1; t.needsUpdate=true;
+  return t;
+}
+
+// ── Inline SVG (same logo across all versions) ────────────────────────────────
+const SVG_SRC = `<svg xmlns="http://www.w3.org/2000/svg" width="2888" height="1911" viewBox="0 0 2888 1911"><g><path d="m881.219,1144.613c0,393.134-731.846,461.075-881.219-6.116l21.813.637s87.815,305.023,467.339,305.023c285.432,0,308.963-441.72-51.992-568.436-179.492-63.025-386.618-33.764-388.691-209.435-4.443-371.632,655.553-320.425,777.249-95.648h-172.503c-32.948-76.856-118.408-152.141-247.004-152.141-261.916,0-256.629,351.315,18.096,433.664,202.298,60.67,456.884,50.956,456.914,292.451Z"/><path d="m1595.77,1456.742h-137.23l-146.262-356.275h-101.897c-299.751,0-479.481,356.275-479.481,356.275l344.34-838.659c-121.207,291.015-114.869,460.822,135.423,460.822h92.745l-208.695-508.298-363.813,886.135h-24.034l375.837-915.381-56.598-137.838h137.2l432.464,1053.219Z"/><path d="m1402.233,998.466l84.354,1.792c136.173,0,324.209-14.29,447.382,284.721l-.236-1.022,71.177,172.785h24.002l-433.408-1052.078h-23.972c103.002,250.025,114.966,569.413-108.356,569.413l-71.236-.785"/><path d="m2694.285,1332.174v124.598h24.671V403.554h-24.671v24.656c0,279.582-219.823,439.646-445.949,439.646v24.642c226.126,0,445.949,160.079,445.949,439.676Zm-153.014-903.98h153.014v-24.641h-656.356v397.783l12.351.518c0-193.368,228.304-373.542,490.991-373.66Zm-535.649,630.765v397.812h688.663v-24.671h-185.144c-262.761,0-491.17-180.232-491.17-373.66l-12.349.519Z"/><path d="m2888,1385.425c0,40.767-33.037,73.805-73.818,73.805s-73.82-33.037-73.82-73.805,33.053-73.82,73.82-73.82,73.805,33.037,73.818,73.82Z"/></g><g><path d="m704.805,322c-2.869-69.367-38.354-116.726-99.409-146.483-16.674-8.127-34.859-10.892-53.269-12.176-2.091-.146-4.084-1.708-6.122-2.613,1.95-.755,3.881-2.112,5.854-2.177,78.103-2.557,137.923-67.735,149.447-127.236,1.58-8.16,2.043-16.531,3.246-24.772.327-2.242,1.467-4.365,2.234-6.543.873,2.067,2.443,4.109,2.517,6.204,2.739,76.968,65.351,134.504,120.56,147.466,12.429,2.918,25.41,3.485,38.137,5.135v4.295c-17.903.761-35.827,2.328-52.382,9.521-65.33,28.386-103.193,76.641-106.519,149.379h-4.295Z"/><path d="m1888.418,394c-2.067-49.978-27.634-84.101-71.624-105.541-12.013-5.855-25.115-7.847-38.38-8.772-1.507-.105-2.942-1.231-4.411-1.883,1.405-.544,2.796-1.522,4.218-1.568,56.273-1.842,99.373-48.803,107.676-91.673,1.139-5.879,1.472-11.911,2.339-17.848.236-1.615,1.057-3.145,1.61-4.714.629,1.489,1.76,2.961,1.814,4.47,1.974,55.455,47.085,96.909,86.863,106.249,8.955,2.102,18.308,2.511,27.477,3.7v3.094c-12.899.548-25.813,1.677-37.741,6.86-47.07,20.452-74.35,55.22-76.747,107.627h-3.094Z"/><path d="m1149.418,1786c-2.067-49.978-27.634-84.101-71.624-105.541-12.013-5.855-25.115-7.847-38.38-8.772-1.507-.105-2.942-1.231-4.411-1.883,1.405-.544,2.796-1.522,4.218-1.568,56.273-1.842,99.373-48.803,107.676-91.673,1.139-5.879,1.472-11.911,2.339-17.848.236-1.615,1.057-3.145,1.61-4.714.629,1.489,1.76,2.961,1.814,4.47,1.974,55.455,47.085,96.909,86.863,106.249,8.955,2.102,18.308,2.511,27.477,3.7v3.094c-12.899.548-25.813,1.677-37.741,6.86-47.07,20.452-74.35,55.22-76.747,107.627h-3.094Z"/><path d="m2347.065,1911c-3.18-76.907-42.524-129.414-110.214-162.406-18.486-9.01-38.648-12.076-59.059-13.499-2.319-.162-4.528-1.894-6.788-2.897,2.162-.837,4.303-2.342,6.49-2.413,86.592-2.835,152.915-75.098,165.692-141.067,1.752-9.047,2.266-18.328,3.599-27.465.363-2.486,1.627-4.84,2.477-7.254.967,2.292,2.708,4.556,2.791,6.879,3.037,85.335,72.455,149.124,133.665,163.496,13.78,3.235,28.172,3.864,42.282,5.693v4.761c-19.849.843-39.722,2.581-58.076,10.556-72.431,31.472-114.41,84.972-118.098,165.617h-4.761Z"/></g></svg>`;
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  try {
+    renderer = new THREE.WebGPURenderer({ antialias: !IS_MOBILE, alpha: false });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, IS_MOBILE ? 1.5 : 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = IS_MOBILE ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x080808);
+
+    camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 1000);
+    camera.position.z = targetZ;
+
+    // 15-second WebGPU init timeout with descriptive error
+    await Promise.race([
+      renderer.init(),
+      new Promise((_,r) => setTimeout(() => r(new Error('WebGPU timed out.<br>Use Chrome 113+, Edge 113+, or enable WebGPU flags.')), 15000))
+    ]);
+
+    // ── Floor (dark industrial metal) ─────────────────────────────────────────
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(100,100),
+      new THREE.MeshPhysicalMaterial({ color:0x0c0c0c, metalness:.7, roughness:.45, clearcoat:.15, clearcoatRoughness:.6, reflectivity:.3 })
+    );
+    floor.rotation.x = -Math.PI/2; floor.position.y = -4; floor.receiveShadow = true;
+    scene.add(floor);
+
+    // ── Chrome SVG logo (ExtrudeGeometry from inline SVG paths) ───────────────
+    const mat = new THREE.MeshPhysicalMaterial({
+      color:0xdddddd, metalness:1, roughness:0.06,
+      clearcoat:.6, clearcoatRoughness:.1, reflectivity:.8, envMapIntensity:1.8, ior:2.33
+    });
+    object = new THREE.Group(); scene.add(object);
+    new SVGLoader().parse(SVG_SRC).paths.forEach(p => p.toShapes(true).forEach(s => {
+      const m = new THREE.Mesh(
+        new THREE.ExtrudeGeometry(s, { depth:100, bevelEnabled:true, bevelThickness:15, bevelSize:10, bevelSegments:8 }),
+        mat
+      );
+      m.castShadow = m.receiveShadow = true; object.add(m);
+    }));
+    // Center and scale the logo group
+    const bb = new THREE.Box3().setFromObject(object);
+    const ctr = new THREE.Vector3(); bb.getCenter(ctr);
+    object.children.forEach(c => c.position.sub(ctr));
+    object.scale.set(.003, -.003, .003);
+
+    // Invisible sphere used for hover/drag raycasting
+    hitBox = new THREE.Mesh(
+      new THREE.SphereGeometry(7,16,16),
+      new THREE.MeshBasicMaterial({ visible:false })
+    );
+    scene.add(hitBox);
+
+    // ── TSL Volumetric raymarching ─────────────────────────────────────────────
+    const noiseT  = makeNoise3D();
+    const smokeAmt = uniform(1.8);
+    const volMat   = new THREE.VolumeNodeMaterial();
+    volMat.steps = IS_MOBILE ? 16 : 32;
+    volMat.offsetNode = bayer16(screenCoordinate); // Bayer dithering removes banding
+    volMat.scatteringNode = Fn(({ positionRay }) => {
+      const ts = vec3(time.mul(.8), time.mul(.15), time.mul(.25));
+      const grain = (sc, t2=1) => texture3D(noiseT, positionRay.add(ts.mul(t2)).mul(sc).mod(1), 0).r.add(.5);
+      // 4-octave multi-scale density sampling (V5's richest config)
+      let d = grain(.12); d=d.mul(grain(.06,.8)); d=d.mul(grain(.025,1.5)); d=d.mul(grain(.015,.5));
+      return smokeAmt.mix(1, d);
+    });
+    const volMesh = new THREE.Mesh(new THREE.BoxGeometry(60,60,60), volMat);
+    volMesh.receiveShadow = true;
+    volMesh.layers.disableAll(); volMesh.layers.enable(LAYER_VOL);
+    scene.add(volMesh);
+
+    // ── Floating dust particles ────────────────────────────────────────────────
+    const PC = IS_MOBILE ? 120 : 300;
+    const pPos=new Float32Array(PC*3), pSpd=new Float32Array(PC), pPhs=new Float32Array(PC);
+    for (let i=0; i<PC; i++) {
+      pPos[i*3]=(Math.random()-.5)*40; pPos[i*3+1]=(Math.random()-.5)*40; pPos[i*3+2]=(Math.random()-.5)*40;
+      pSpd[i]=.1+Math.random()*.3; pPhs[i]=Math.random()*Math.PI*2;
+    }
+    const pGeo = new THREE.BufferGeometry();
+    pGeo.setAttribute('position', new THREE.BufferAttribute(pPos,3));
+    particles = new THREE.Points(pGeo, new THREE.PointsMaterial({
+      color:0xaaaaaa, size:.06, transparent:true, opacity:.35,
+      blending:THREE.AdditiveBlending, depthWrite:false, sizeAttenuation:true
+    }));
+    particles.userData = { spd:pSpd, phs:pPhs };
+    scene.add(particles);
+
+    // ── Lights ────────────────────────────────────────────────────────────────
+    scene.add(new THREE.HemisphereLight(0x444444, 0x080808, .4));
+    // 5 point lights: front key, left fill, right fill, back rim, top specular
+    [[0,3,5],[-5,1,-2],[5,1,-2],[0,2,-6],[0,8,0]].forEach(([x,y,z],i) => {
+      const l = new THREE.PointLight(0xffffff, PT_BASE[i]);
+      l.position.set(x,y,z); scene.add(l); ptLights.push(l);
+    });
+    // 2 crossing volumetric spotlights (god rays)
+    const smSz = IS_MOBILE ? 512 : 2048;
+    [[-6.4,-4,0, 1.5,5,0],[6.4,-4,0,-1.5,5,0]].forEach(([px,py,pz,tx,ty,tz]) => {
+      const sl = new THREE.SpotLight(targetColor, 500);
+      sl.position.set(px,py,pz); sl.target.position.set(tx,ty,tz);
+      sl.angle=.18; sl.penumbra=.4; sl.decay=1.8; sl.distance=50;
+      sl.castShadow=true; sl.shadow.mapSize.set(smSz,smSz);
+      sl.shadow.camera.near=.5; sl.shadow.camera.far=30; sl.shadow.bias=-.0005;
+      sl.shadow.radius = IS_MOBILE ? 1 : 2;
+      sl.layers.enable(LAYER_VOL);
+      scene.add(sl, sl.target); spotLights.push(sl);
+    });
+
+    // ── TSL post-processing pipeline ──────────────────────────────────────────
+    pipeline = new THREE.RenderPipeline(renderer);
+    volIntensity = uniform(1.8);
+    const volLayer = new THREE.Layers(); volLayer.disableAll(); volLayer.enable(LAYER_VOL);
+
+    const scenePass = pass(scene, camera);
+    volMat.depthNode = scenePass.getTextureNode('depth').sample(screenUV); // depth-aware volume
+
+    const volPass = pass(scene, camera, { depthBuffer:false });
+    volPass.name='Vol'; volPass.setLayers(volLayer); volPass.setResolutionScale(.5); // 50% res = big GPU win
+    const blurVol = gaussianBlur(volPass, uniform(.5));
+
+    // Chromatic aberration on the main scene
+    const scTex = scenePass.getTextureNode();
+    const caOff = screenUV.sub(vec2(.5,.5)).mul(uniform(.0015));
+    const caScene = vec4(
+      scTex.sample(screenUV.add(caOff)).x,
+      scTex.sample(screenUV).y,
+      scTex.sample(screenUV.sub(caOff)).z,
+      float(1)
+    );
+
+    // Composite: CA scene + volumetrics + bloom + vignette + film grain
+    const composite  = caScene.add(blurVol.mul(volIntensity));
+    const withBloom  = composite.add(bloom(composite, .25, .1));
+    const vd         = screenUV.sub(vec2(.5,.5)).length().mul(1.3);
+    const vignette   = vd.mul(vd).mul(.65).oneMinus().clamp(0,1);
+    const grainSeed  = screenUV.mul(vec2(time.mul(100).add(1), time.mul(73).add(1)));
+    const grainVal   = grainSeed.dot(vec2(12.9898,78.233)).sin().mul(43758.5453).fract();
+    pipeline.outputNode = withBloom.mul(vignette).add(grainVal.sub(.5).mul(uniform(.012)));
+
+    // ── UI ────────────────────────────────────────────────────────────────────
+    buildColorWheel();
+    bindEvents();
+    bindLightPanel();
+
+    setTimeout(() => { hintEl.style.opacity='0'; }, 5000);
+    loadEl.style.opacity='0'; setTimeout(() => { loadEl.style.display='none'; }, 500);
+    renderer.setAnimationLoop(animate);
+
+  } catch(e) {
+    console.error(e);
+    loadEl.style.display='none';
+    errEl.innerHTML = e.message || 'WebGPU not supported.<br>Use Chrome 113+ or Edge 113+.';
+    errEl.style.display='block';
+  }
+}
+
+// ── Interaction ───────────────────────────────────────────────────────────────
+let prevX=0, prevY=0, pinchDist0=0, pinchZ0=0;
+
+function applyDrag(dx, dy) {
+  _qY.setFromAxisAngle(_aY, dx*SENS); _qX.setFromAxisAngle(_aX, dy*SENS);
+  object.quaternion.premultiply(_qY).premultiply(_qX);
+  // Exponential velocity blend (60% old + 40% new) for smooth inertia transfer
+  angVelY = angVelY*.8 + dx*SENS*.2;
+  angVelX = angVelX*.8 + dy*SENS*.2;
+}
+
+function getTouchDist(a,b) { return Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY); }
+
+function bindEvents() {
+  // Pointer events handle mouse + single-touch drag uniformly
+  window.addEventListener('pointerdown', e => {
+    if (panelEl.contains(e.target)||triggerEl.contains(e.target)||lPanelEl.contains(e.target)||lTriggerEl.contains(e.target)) return;
+    if (isHovering || e.pointerType==='touch') {
+      isDragging=true; angVelX=angVelY=0;
+      prevX=e.clientX; prevY=e.clientY; lastInteract=performance.now();
+      document.body.style.cursor='grabbing';
+    }
+  });
+  window.addEventListener('pointermove', e => {
+    if (isDragging && object) {
+      applyDrag(e.clientX-prevX, e.clientY-prevY);
+      prevX=e.clientX; prevY=e.clientY; lastInteract=performance.now();
+    } else if (!IS_MOBILE) {
+      // Hover detection (desktop only -- no raycasting cost on mobile)
+      mouse.set((e.clientX/innerWidth)*2-1, -(e.clientY/innerHeight)*2+1);
+      raycaster.setFromCamera(mouse, camera);
+      isHovering = hitBox ? raycaster.intersectObject(hitBox).length>0 : false;
+      document.body.style.cursor = isHovering ? 'grab' : 'default';
+    }
+  });
+  window.addEventListener('pointerup', () => {
+    isDragging=false; lastInteract=performance.now();
+    document.body.style.cursor = isHovering ? 'grab' : 'default';
+  });
+
+  // Touch events: only handle 2-finger pinch-to-zoom (1-finger = pointer events above)
+  window.addEventListener('touchstart', e => {
+    if (e.touches.length===2) {
+      e.preventDefault();
+      pinchDist0=getTouchDist(e.touches[0],e.touches[1]); pinchZ0=targetZ; isDragging=false;
+    }
+  }, {passive:false});
+  window.addEventListener('touchmove', e => {
+    if (e.touches.length===2) {
+      e.preventDefault();
+      const d=getTouchDist(e.touches[0],e.touches[1]);
+      targetZ=Math.max(MIN_Z, Math.min(MAX_Z, pinchZ0*(pinchDist0/d)));
+      lastInteract=performance.now(); isDragging=false;
+    }
+  }, {passive:false});
+  // Safety reset if all fingers lift while pointer events missed it
+  window.addEventListener('touchend', e => { if(!e.touches.length) isDragging=false; }, {passive:true});
+
+  // Scroll-wheel zoom (desktop)
+  window.addEventListener('wheel', e => {
+    e.preventDefault();
+    targetZ = Math.max(MIN_Z, Math.min(MAX_Z, targetZ+e.deltaY*.01));
+    lastInteract=performance.now();
+  }, {passive:false});
+
+  // Resize
+  window.addEventListener('resize', () => {
+    camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+}
+
+// ── Color wheel + UI controls ─────────────────────────────────────────────────
+function buildColorWheel() {
+  const r = cwCvs.width/2;
+  for (let y=0; y<cwCvs.height; y++) for (let x=0; x<cwCvs.width; x++) {
+    const dx=x-r, dy=y-r, d=Math.sqrt(dx*dx+dy*dy);
+    if (d<=r) { cwCtx.fillStyle=`hsl(${((Math.atan2(dy,dx)+Math.PI)/(Math.PI*2))*360},${(d/r)*100}%,50%)`; cwCtx.fillRect(x,y,1,1); }
+  }
+
+  function pick(e) {
+    const rc=cwCvs.getBoundingClientRect(), px=cwCtx.getImageData(e.clientX-rc.left, e.clientY-rc.top, 1, 1).data;
+    if (px[3]>0) { targetColor.setRGB(px[0]/255, px[1]/255, px[2]/255); presetBtns.forEach(p=>p.classList.remove('on')); }
+  }
+  cwCvs.addEventListener('mousedown', pick);
+  cwCvs.addEventListener('mousemove', e => { if(e.buttons===1) pick(e); resetTimer(); });
+  cwCvs.addEventListener('touchstart', e => pick(e.touches[0]), {passive:false});
+  cwCvs.addEventListener('touchmove', e => { pick(e.touches[0]); resetTimer(); }, {passive:false});
+
+  function openPanel() { panelEl.classList.add('on'); triggerEl.style.opacity='0'; resetTimer(); }
+  triggerEl.addEventListener('click', e => { e.stopPropagation(); openPanel(); });
+  triggerEl.addEventListener('touchend', e => { e.preventDefault(); e.stopPropagation(); openPanel(); }, {passive:false});
+
+  bsEl.addEventListener('input', e => {
+    brightnessScale = +e.target.value;
+    if (volIntensity) volIntensity.value = 1.8*brightnessScale;
+    ptLights.forEach((l,i) => l.intensity = PT_BASE[i]*brightnessScale);
+    const ang = Math.max(.14, Math.min(.22, .165+brightnessScale*.015));
+    spotLights.forEach(l => { l.intensity=500*brightnessScale; l.angle=ang; });
+    resetTimer();
+  });
+
+  presetBtns.forEach(b => b.addEventListener('click', () => {
+    targetColor.set(b.dataset.c); presetBtns.forEach(p=>p.classList.remove('on')); b.classList.add('on'); resetTimer();
+  }));
+}
+
+function resetTimer() {
+  clearTimeout(uiTimer);
+  uiTimer = setTimeout(() => { panelEl.classList.remove('on'); triggerEl.style.opacity='1'; }, 3000);
+}
+
+// ── Light direction control ───────────────────────────────────────────────────
+function applyLightDir() {
+  if (!spotLights.length) return;
+  const az = lightAzimuth;
+  const R = 6.4, Rt = 1.5; // source radius, target radius (opposite sides)
+  const c = Math.cos(az), s = Math.sin(az);
+  // Sources: symmetric, orbiting Y-axis. Light0 = left, Light1 = right.
+  spotLights[0].position.set(-R*c, -4, -R*s);
+  spotLights[1].position.set( R*c, -4,  R*s);
+  // Targets: small radius in OPPOSITE direction -> beams always cross at origin
+  spotLights[0].target.position.set( Rt*c, lightElevation,  Rt*s);
+  spotLights[1].target.position.set(-Rt*c, lightElevation, -Rt*s);
+  spotLights[0].target.updateMatrixWorld();
+  spotLights[1].target.updateMatrixWorld();
+}
+
+function bindLightPanel() {
+  const pad = $('lpad'), dot = $('ldot');
+  let lDrag = false;
+  const MAX_AZ = Math.PI/3; // +-60 degrees azimuth range
+
+  function updateDot() {
+    const w = pad.offsetWidth, h = pad.offsetHeight;
+    if (!w) return; // panel not visible yet
+    dot.style.left = ((.5 + lightAzimuth/MAX_AZ*.5)*w) + 'px';
+    dot.style.top  = ((1 - (lightElevation+2)/12)*h) + 'px';
+  }
+
+  function setPadPos(cx, cy) {
+    const r = pad.getBoundingClientRect();
+    const nx = Math.max(0, Math.min(1, (cx-r.left)/r.width));
+    const ny = Math.max(0, Math.min(1, (cy-r.top)/r.height));
+    lightAzimuth   = (nx-.5)*2*MAX_AZ;
+    lightElevation = -2 + (1-ny)*12;
+    applyLightDir(); updateDot(); resetLTimer();
+  }
+
+  pad.addEventListener('pointerdown', e => {
+    lDrag=true; pad.setPointerCapture(e.pointerId); setPadPos(e.clientX, e.clientY);
+  });
+  pad.addEventListener('pointermove', e => { if (lDrag) setPadPos(e.clientX, e.clientY); });
+  pad.addEventListener('pointerup',     () => lDrag=false);
+  pad.addEventListener('pointercancel', () => lDrag=false);
+
+  function openLPanel() {
+    lPanelEl.classList.add('on'); lTriggerEl.style.opacity='0';
+    setTimeout(updateDot, 50); // recalc dot after panel becomes visible
+    resetLTimer();
+  }
+  lTriggerEl.addEventListener('click', e => { e.stopPropagation(); openLPanel(); });
+  lTriggerEl.addEventListener('touchend', e => { e.preventDefault(); e.stopPropagation(); openLPanel(); }, {passive:false});
+
+  $('lreset').addEventListener('click', () => {
+    lightAzimuth=0; lightElevation=5; applyLightDir(); updateDot(); resetLTimer();
+  });
+}
+
+function resetLTimer() {
+  clearTimeout(lUiTimer);
+  lUiTimer = setTimeout(() => { lPanelEl.classList.remove('on'); lTriggerEl.style.opacity='1'; }, 3000);
+}
+
+// ── Animate ───────────────────────────────────────────────────────────────────
+function animate() {
+  const t   = performance.now()*.001;
+  const now = performance.now();
+
+  if (object) {
+    if (!isDragging) {
+      if (Math.abs(angVelX)>CUTOFF || Math.abs(angVelY)>CUTOFF) {
+        // Zero-gravity inertia: apply velocity then decay (3.5% energy loss per frame)
+        _qY.setFromAxisAngle(_aY, angVelY); _qX.setFromAxisAngle(_aX, angVelX);
+        object.quaternion.premultiply(_qY).premultiply(_qX);
+        angVelX*=DECAY; angVelY*=DECAY;
+      } else if (now-lastInteract > 2000) {
+        // Drift gently back to identity after 2s of no interaction
+        object.quaternion.slerp(_idQ, .005);
+      }
+    }
+    // Breathing pulse scale animation
+    const bs = .003*(1+Math.sin(t*.8*Math.PI*2)*.008);
+    object.scale.set(bs,-bs,bs);
+    object.position.y = Math.sin(t*.5)*.1;
+    object.position.x = Math.cos(t*.3)*.1;
+    if (hitBox) hitBox.position.copy(object.position);
+  }
+
+  // Smooth camera zoom lerp
+  camera.position.z += (targetZ-camera.position.z)*.08;
+
+  // Animate floating particles (wrap-around bounds)
+  if (particles) {
+    const pos=particles.geometry.attributes.position.array;
+    const {spd,phs}=particles.userData, n=pos.length/3;
+    for (let i=0; i<n; i++) {
+      const ix=i*3, sp=spd[i], ph=phs[i];
+      pos[ix]  +=Math.sin(t*sp+ph)*.005;
+      pos[ix+1]+=sp*.003;
+      pos[ix+2]+=Math.cos(t*sp*.7+ph)*.005;
+      if(pos[ix+1]>20)pos[ix+1]=-20;
+      if(pos[ix]>20)pos[ix]=-20; if(pos[ix]<-20)pos[ix]=20;
+      if(pos[ix+2]>20)pos[ix+2]=-20; if(pos[ix+2]<-20)pos[ix+2]=20;
+    }
+    particles.geometry.attributes.position.needsUpdate=true;
+    // Particle color tracks spotlight color, tinted gray for industrial look
+    particles.material.color.copy(currentColor).lerp(_gray,.6);
+  }
+
+  // Smooth color interpolation -> push to all lights
+  currentColor.lerp(targetColor,.05);
+  spotLights.forEach(l=>l.color.copy(currentColor));
+  ptLights.forEach(l=>l.color.copy(currentColor));
+
+  if (pipeline) pipeline.render();
+}
+
+init();
+</script>
+</body>
+</html>
